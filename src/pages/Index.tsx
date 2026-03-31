@@ -9,6 +9,7 @@ export default function Index() {
   const [role, setRole] = useState<"admin" | "user" | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedStock | null>(null);
+  const [cellChanges] = useState<Map<string, string>>(new Map());
 
   const handleFileLoad = useCallback((data: ArrayBuffer, name: string) => {
     try {
