@@ -150,8 +150,30 @@ export function updateExcelCell(workbook: XLSX.WorkBook, row: number, col: numbe
   }
 }
 
-export function exportWorkbook(workbook: XLSX.WorkBook): ArrayBuffer {
-  return XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+export function exportWorkbook(originalData: ArrayBuffer, changes: Map<string, string>): ArrayBuffer {
+  // Re-read original file to preserve all formatting, colors, merges, etc.
+  const wb = XLSX.read(originalData, { type: "array", cellStyles: true });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  
+  // Apply only the changed cells
+  for (const [cellRef, value] of changes) {
+    const num = Number(value);
+    if (!sheet[cellRef]) {
+      sheet[cellRef] = !isNaN(num) && value !== "" 
+        ? { t: "n", v: num } 
+        : { t: "s", v: value };
+    } else {
+      if (!isNaN(num) && value !== "") {
+        sheet[cellRef].t = "n";
+        sheet[cellRef].v = num;
+      } else {
+        sheet[cellRef].t = "s";
+        sheet[cellRef].v = value;
+      }
+    }
+  }
+  
+  return XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
 }
 
 export function extractKw(puissance: string): number {
