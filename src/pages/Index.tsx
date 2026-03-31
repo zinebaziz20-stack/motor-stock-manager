@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { RoleSelector } from "@/components/RoleSelector";
 import { FileUploader } from "@/components/FileUploader";
 import { StockTable } from "@/components/StockTable";
-import { parseStockExcel, updateExcelCell, exportWorkbook, type MotorEntry, type ParsedStock } from "@/lib/excelParser";
+import { parseStockExcel, updateExcelCell, exportWorkbook, encodeCellRef, type ParsedStock } from "@/lib/excelParser";
 import { LogOut, Zap } from "lucide-react";
 
 export default function Index() {
