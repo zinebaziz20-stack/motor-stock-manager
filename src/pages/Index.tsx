@@ -37,9 +37,9 @@ export default function Index() {
     setParsedData({ ...parsedData, motors: updatedMotors });
   }, [parsedData, cellChanges]);
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     if (!parsedData) return;
-    const buffer = exportWorkbook(parsedData.originalData, cellChanges);
+    const buffer = await exportWorkbook(parsedData.originalData, cellChanges);
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
