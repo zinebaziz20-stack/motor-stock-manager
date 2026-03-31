@@ -1,15 +1,29 @@
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 
+// ---- Types ----
+
+export type MotorCategory = "fonte" | "aluminium" | "bride_dm" | "bride_omt4" | "extra_dm1" | "extra_omt2" | "reserve" | "reparer";
+
 export interface MotorEntry {
   id: string;
-  type: "fonte" | "aluminium";
+  category: MotorCategory;
   speed: number;
   puissance: string;
   supplier: string;
   quantity: string;
   rawRow: number;
   rawCol: number;
+  // Extra fields for reserved motors
+  date?: string;
+  commercial?: string;
+  societe?: string;
+  produit?: string;
+  serie?: string;
+  bc?: string;
+  // Extra for special tables
+  taille?: string;
+  description?: string;
 }
 
 export interface ParsedStock {
@@ -18,7 +32,7 @@ export interface ParsedStock {
   originalData: ArrayBuffer;
 }
 
-function cleanCell(val: unknown): string {
+function clean(val: unknown): string {
   if (val === undefined || val === null || val === "") return "";
   return String(val).trim();
 }
@@ -29,109 +43,149 @@ export function parseStockExcel(data: ArrayBuffer): ParsedStock {
   const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
   const motors: MotorEntry[] = [];
-  let idCounter = 0;
+  let id = 0;
 
-  // Parse Fonte section
-  // 3000 tr/min: columns A-E (0-4), rows ~8-34
-  // 1500 tr/min: columns F-J (5-9), rows ~8-40
-  // 1000 tr/min: columns K-O (10-14), rows ~8-30
-  // 750 tr/min: columns P-R (15-17), rows ~8-25
-
-  const fonteSpeedConfigs = [
-    { speed: 3000, puissanceCol: 0, supplierCols: [{ col: 1, name: "OMT3" }, { col: 2, name: "OMT1" }, { col: 3, name: "DM" }], startRow: 7, endRow: 34 },
-    { speed: 1500, puissanceCol: 5, supplierCols: [{ col: 6, name: "OMT3" }, { col: 7, name: "OMT1" }, { col: 8, name: "DM" }], startRow: 7, endRow: 42 },
-    { speed: 1000, puissanceCol: 10, supplierCols: [{ col: 11, name: "DM1" }, { col: 12, name: "OMT1" }, { col: 13, name: "DM" }], startRow: 7, endRow: 28 },
-    { speed: 750, puissanceCol: 15, supplierCols: [{ col: 16, name: "OMT1" }], startRow: 7, endRow: 22 },
+  // ===== 1) FONTE: 3000 / 1500 / 1000 / 750 =====
+  const fonteConfigs = [
+    { speed: 3000, pCol: 0, sups: [{ c: 1, n: "OMT3" }, { c: 2, n: "OMT1" }, { c: 3, n: "DM" }], r0: 7, r1: 34 },
+    { speed: 1500, pCol: 5, sups: [{ c: 6, n: "OMT3" }, { c: 7, n: "OMT1" }, { c: 8, n: "DM" }], r0: 7, r1: 37 },
+    { speed: 1000, pCol: 10, sups: [{ c: 11, n: "DM1" }, { c: 12, n: "OMT1" }, { c: 13, n: "DM" }], r0: 7, r1: 28 },
+    { speed: 750, pCol: 15, sups: [{ c: 16, n: "OMT1" }], r0: 7, r1: 20 },
   ];
 
-  for (const config of fonteSpeedConfigs) {
-    for (let r = config.startRow; r <= Math.min(config.endRow, raw.length - 1); r++) {
+  for (const cfg of fonteConfigs) {
+    for (let r = cfg.r0; r <= Math.min(cfg.r1, raw.length - 1); r++) {
       const row = raw[r];
       if (!row) continue;
-      const puissance = cleanCell(row[config.puissanceCol]);
-      if (!puissance || !puissance.toLowerCase().includes("kw")) continue;
-
-      for (const sup of config.supplierCols) {
-        const qty = cleanCell(row[sup.col]);
-        motors.push({
-          id: `fonte-${idCounter++}`,
-          type: "fonte",
-          speed: config.speed,
-          puissance,
-          supplier: sup.name,
-          quantity: qty,
-          rawRow: r,
-          rawCol: sup.col,
-        });
+      const p = clean(row[cfg.pCol]);
+      if (!p || !p.toLowerCase().includes("kw")) continue;
+      for (const s of cfg.sups) {
+        motors.push({ id: `f-${id++}`, category: "fonte", speed: cfg.speed, puissance: p, supplier: s.n, quantity: clean(row[s.c]), rawRow: r, rawCol: s.c });
       }
     }
   }
 
-  // Parse Aluminium section - 1500 t/min
-  const aluStartRow = findRowContaining(raw, "Moteurs eléctrique Aluminium");
-  if (aluStartRow >= 0) {
-    // 1500 t/min aluminium
-    for (let r = aluStartRow + 4; r < Math.min(aluStartRow + 25, raw.length); r++) {
-      const row = raw[r];
-      if (!row) continue;
-      const puissance = cleanCell(row[0]);
-      if (!puissance || !puissance.toLowerCase().includes("kw")) continue;
-      
-      const suppliers1500 = [
-        { col: 1, name: "OMT4" }, { col: 2, name: "OMT2" }, { col: 3, name: "DMA" }, { col: 4, name: "DUTCH" }
-      ];
-      for (const sup of suppliers1500) {
-        const qty = cleanCell(row[sup.col]);
-        motors.push({
-          id: `alu-1500-${idCounter++}`,
-          type: "aluminium",
-          speed: 1500,
-          puissance,
-          supplier: sup.name,
-          quantity: qty,
-          rawRow: r,
-          rawCol: sup.col,
-        });
-      }
-    }
+  // 1500 special voltages (rows 38-42, col F-G): 22Kw 220v, 5.5Kw 500V, etc.
+  for (let r = 38; r <= Math.min(42, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const p = clean(row[5]);
+    if (!p || !p.toLowerCase().includes("kw")) continue;
+    const qty = clean(row[6]);
+    motors.push({ id: `f-${id++}`, category: "fonte", speed: 1500, puissance: p, supplier: "Spécial", quantity: qty, rawRow: r, rawCol: 6 });
+  }
 
-    // 3000 t/min aluminium
-    for (let r = aluStartRow + 4; r < Math.min(aluStartRow + 25, raw.length); r++) {
-      const row = raw[r];
-      if (!row) continue;
-      const puissance = cleanCell(row[10]);
-      if (!puissance || !puissance.toLowerCase().includes("kw")) continue;
+  // ===== 2) BRIDE DM (rows 29-42, cols P=15, Q=16, R=17) =====
+  // Header at R29: "Bride DM | B5 | OMT3"
+  for (let r = 29; r <= Math.min(42, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const taille = clean(row[15]);
+    if (!taille || isNaN(Number(taille))) continue; // taille is a number like 80,90...
+    const b5 = clean(row[16]);
+    const omt3 = clean(row[17]);
+    if (b5) motors.push({ id: `bdm-${id++}`, category: "bride_dm", speed: 0, puissance: "", supplier: "B5", quantity: b5, rawRow: r, rawCol: 16, taille });
+    if (omt3) motors.push({ id: `bdm-${id++}`, category: "bride_dm", speed: 0, puissance: "", supplier: "OMT3", quantity: omt3, rawRow: r, rawCol: 17, taille });
+  }
 
-      const suppliers3000 = [
-        { col: 11, name: "DMA2" }, { col: 12, name: "OMT2" }, { col: 13, name: "DUTCH" }
-      ];
-      for (const sup of suppliers3000) {
-        const qty = cleanCell(row[sup.col]);
-        motors.push({
-          id: `alu-3000-${idCounter++}`,
-          type: "aluminium",
-          speed: 3000,
-          puissance,
-          supplier: sup.name,
-          quantity: qty,
-          rawRow: r,
-          rawCol: sup.col,
-        });
-      }
+  // ===== 3) Extra DM1 table (rows 32-34, cols K=10, L=11, M=12, N=13) =====
+  // Header at R32: "Puissance | DM1 | Taille | Vitesse"
+  for (let r = 32; r <= Math.min(34, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const p = clean(row[10]);
+    if (!p || !p.toLowerCase().includes("kw")) continue;
+    const qty = clean(row[11]);
+    const taille = clean(row[12]);
+    const vitesse = clean(row[13]);
+    motors.push({ id: `dm1-${id++}`, category: "extra_dm1", speed: Number(vitesse) || 0, puissance: p, supplier: "DM1", quantity: qty, rawRow: r, rawCol: 11, taille });
+  }
+
+  // ===== 4) Extra OMT2 table (rows 36-42, cols K=10, L=11, M=12, N=13) =====
+  // Header at R36: "Puissance | OMT2 | Taille | Vitesse"
+  for (let r = 36; r <= Math.min(42, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const p = clean(row[10]);
+    if (!p || !p.toLowerCase().includes("kw")) continue;
+    const qty = clean(row[11]);
+    const taille = clean(row[12]);
+    const vitesse = clean(row[13]);
+    motors.push({ id: `omt2-${id++}`, category: "extra_omt2", speed: Number(vitesse) || 0, puissance: p, supplier: "OMT2", quantity: qty, rawRow: r, rawCol: 11, taille });
+  }
+
+  // ===== 5) ALUMINIUM 1500 (rows 50-68, cols A-E) =====
+  for (let r = 50; r <= Math.min(68, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const p = clean(row[0]);
+    if (!p || !p.toLowerCase().includes("kw")) continue;
+    for (const s of [{ c: 1, n: "OMT4" }, { c: 2, n: "OMT2" }, { c: 3, n: "DMA" }, { c: 4, n: "DUTCH" }]) {
+      motors.push({ id: `a15-${id++}`, category: "aluminium", speed: 1500, puissance: p, supplier: s.n, quantity: clean(row[s.c]), rawRow: r, rawCol: s.c });
     }
+  }
+
+  // ===== 6) ALUMINIUM 3000 (rows 50-65, cols K=10, L=11, M=12, N=13) =====
+  for (let r = 50; r <= Math.min(65, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const p = clean(row[10]);
+    if (!p || !p.toLowerCase().includes("kw")) continue;
+    for (const s of [{ c: 11, n: "DMA2" }, { c: 12, n: "OMT2" }, { c: 13, n: "DUTCH" }]) {
+      motors.push({ id: `a30-${id++}`, category: "aluminium", speed: 3000, puissance: p, supplier: s.n, quantity: clean(row[s.c]), rawRow: r, rawCol: s.c });
+    }
+  }
+
+  // ===== 7) BRIDE OMT4 (rows 107-113, cols P=15, Q=16, R=17) =====
+  for (let r = 107; r <= Math.min(113, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const taille = clean(row[15]);
+    if (!taille || isNaN(Number(taille))) continue;
+    const b5 = clean(row[16]);
+    const b14 = clean(row[17]);
+    if (b5) motors.push({ id: `bo4-${id++}`, category: "bride_omt4", speed: 0, puissance: "", supplier: "B5", quantity: b5, rawRow: r, rawCol: 16, taille });
+    if (b14) motors.push({ id: `bo4-${id++}`, category: "bride_omt4", speed: 0, puissance: "", supplier: "B14", quantity: b14, rawRow: r, rawCol: 17, taille });
+  }
+
+  // ===== 8) MOTEURS RÉSERVÉS (rows 89+) =====
+  // Header R89: Date | Comerciel | SOCIETE | | Produit | | | SERIE | Qté | BC
+  let currentCommercial = "";
+  for (let r = 89; r <= Math.min(104, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const comm = clean(row[1]);
+    if (comm && !clean(row[4])) { currentCommercial = comm; continue; }
+    const produit = clean(row[4]);
+    if (!produit) continue;
+    const qty = clean(row[8]);
+    const serie = clean(row[7]);
+    const date = clean(row[0]);
+    const societe = clean(row[2]);
+    const bc = clean(row[9]);
+    motors.push({
+      id: `res-${id++}`, category: "reserve", speed: 0, puissance: produit, supplier: serie || "—",
+      quantity: qty, rawRow: r, rawCol: 8, commercial: currentCommercial || comm, date, societe, produit, serie, bc,
+    });
+  }
+
+  // ===== 9) MOTEURS À RÉPARER (rows 106+) =====
+  for (let r = 106; r <= Math.min(119, raw.length - 1); r++) {
+    const row = raw[r];
+    if (!row) continue;
+    const desc = clean(row[1]);
+    if (!desc || desc.toLowerCase().includes("moteurs") && desc.toLowerCase().includes("parer")) continue;
+    if (!desc.toLowerCase().includes("kw") && !desc.toLowerCase().includes("dma")) continue;
+    motors.push({
+      id: `rep-${id++}`, category: "reparer", speed: 0, puissance: "", supplier: "",
+      quantity: "", rawRow: r, rawCol: 1, description: desc,
+    });
   }
 
   return { motors, workbook, originalData: data };
 }
 
-function findRowContaining(raw: unknown[][], text: string): number {
-  for (let i = 0; i < raw.length; i++) {
-    for (const cell of raw[i]) {
-      if (String(cell).includes(text)) return i;
-    }
-  }
-  return -1;
-}
+// ---- Utility functions ----
 
 export function updateExcelCell(workbook: XLSX.WorkBook, row: number, col: number, value: string): void {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -139,50 +193,30 @@ export function updateExcelCell(workbook: XLSX.WorkBook, row: number, col: numbe
   if (!sheet[cellRef]) {
     sheet[cellRef] = { t: "s", v: value };
   } else {
-    sheet[cellRef].v = value;
-    // Try to set as number if possible
     const num = Number(value);
     if (!isNaN(num) && value !== "") {
       sheet[cellRef].t = "n";
       sheet[cellRef].v = num;
     } else {
       sheet[cellRef].t = "s";
+      sheet[cellRef].v = value;
     }
   }
 }
 
-/**
- * Export by patching the original xlsx binary directly via JSZip.
- * This preserves ALL original formatting, colors, merges, images, etc.
- * Only the changed cell values are modified in the XML.
- */
 export async function exportWorkbook(originalData: ArrayBuffer, changes: Map<string, string>): Promise<ArrayBuffer> {
-  if (changes.size === 0) {
-    // No changes — return original file as-is
-    return originalData;
-  }
+  if (changes.size === 0) return originalData;
 
   const zip = await JSZip.loadAsync(originalData);
-  
-  // Find the sheet XML (usually xl/worksheets/sheet1.xml)
-  const sheetPath = "xl/worksheets/sheet1.xml";
-  const sheetFile = zip.file(sheetPath);
-  if (!sheetFile) {
-    // Fallback: return original if we can't find the sheet
-    return originalData;
-  }
+  const sheetFile = zip.file("xl/worksheets/sheet1.xml");
+  if (!sheetFile) return originalData;
 
   let sheetXml = await sheetFile.async("string");
-
-  // Also need to check/modify shared strings if cells reference them
-  const sstPath = "xl/sharedStrings.xml";
-  const sstFile = zip.file(sstPath);
+  const sstFile = zip.file("xl/sharedStrings.xml");
   let sharedStrings: string[] = [];
-  let sstXml = "";
-  
+
   if (sstFile) {
-    sstXml = await sstFile.async("string");
-    // Parse shared strings
+    const sstXml = await sstFile.async("string");
     const siMatches = sstXml.match(/<si>([\s\S]*?)<\/si>/g);
     if (siMatches) {
       sharedStrings = siMatches.map((si) => {
@@ -192,58 +226,32 @@ export async function exportWorkbook(originalData: ArrayBuffer, changes: Map<str
     }
   }
 
-  // For each change, find the cell in XML and update its value
   for (const [cellRef, value] of changes) {
     const num = Number(value);
     const isNum = !isNaN(num) && value.trim() !== "";
-
-    // Match the cell element in XML: <c r="B8" s="..." t="...">...</c>
-    // The cell can have various formats
-    const cellRegex = new RegExp(
-      `(<c\\s+r="${cellRef}"[^>]*?)(?:\\s+t="[^"]*")?([^>]*>)[\\s\\S]*?</c>`,
-      "i"
-    );
-
+    const cellRegex = new RegExp(`(<c\\s+r="${cellRef}"[^>]*?)(?:\\s+t="[^"]*")?([^>]*>)[\\s\\S]*?</c>`, "i");
     const cellMatch = sheetXml.match(cellRegex);
-    
+
     if (cellMatch) {
-      // Cell exists — replace its value
       if (isNum) {
-        // Numeric: remove t attribute, set <v>number</v>
-        let openTag = cellMatch[1].replace(/\s+t="[^"]*"/, "") + cellMatch[2];
-        // Remove any existing t= attribute from the combined tag
-        openTag = openTag.replace(/\s+t="[^"]*"/, "");
-        const replacement = `${openTag}<v>${num}</v></c>`;
-        sheetXml = sheetXml.replace(cellMatch[0], replacement);
+        let openTag = (cellMatch[1] + cellMatch[2]).replace(/\s+t="[^"]*"/g, "");
+        sheetXml = sheetXml.replace(cellMatch[0], `${openTag}<v>${num}</v></c>`);
       } else {
-        // String: add to shared strings and reference it
         sharedStrings.push(value);
         const ssIndex = sharedStrings.length - 1;
-        let openTag = cellMatch[1] + ` t="s"` + cellMatch[2];
-        // Clean up any duplicate t= attributes  
-        const tCount = (openTag.match(/\s+t="[^"]*"/g) || []).length;
-        if (tCount > 1) {
-          openTag = openTag.replace(/\s+t="[^"]*"/g, "");
-          openTag = openTag.replace(/>/, ` t="s">`);
-        }
-        const replacement = `${openTag}<v>${ssIndex}</v></c>`;
-        sheetXml = sheetXml.replace(cellMatch[0], replacement);
+        let openTag = (cellMatch[1] + cellMatch[2]).replace(/\s+t="[^"]*"/g, "").replace(/>/, ` t="s">`);
+        sheetXml = sheetXml.replace(cellMatch[0], `${openTag}<v>${ssIndex}</v></c>`);
       }
-    } else {
-      // Cell doesn't exist in XML — we'd need to insert it
-      // For simplicity, skip non-existing cells (rare case for stock updates)
     }
   }
 
-  // Update the sheet XML
-  zip.file(sheetPath, sheetXml);
+  zip.file("xl/worksheets/sheet1.xml", sheetXml);
 
-  // Update shared strings if we added any
   if (sharedStrings.length > 0 && sstFile) {
-    const newSstEntries = sharedStrings.map((s) => `<si><t>${s}</t></si>`).join("");
-    const newSstXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.length}" uniqueCount="${sharedStrings.length}">${newSstEntries}</sst>`;
-    zip.file(sstPath, newSstXml);
+    const entries = sharedStrings.map((s) => `<si><t>${s}</t></si>`).join("");
+    zip.file("xl/sharedStrings.xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.length}" uniqueCount="${sharedStrings.length}">${entries}</sst>`
+    );
   }
 
   return zip.generateAsync({ type: "arraybuffer" });
@@ -258,3 +266,14 @@ export function extractKw(puissance: string): number {
 export function encodeCellRef(row: number, col: number): string {
   return XLSX.utils.encode_cell({ r: row, c: col });
 }
+
+export const CATEGORY_LABELS: Record<MotorCategory, string> = {
+  fonte: "Fonte",
+  aluminium: "Aluminium",
+  bride_dm: "Bride DM",
+  bride_omt4: "Bride OMT4",
+  extra_dm1: "DM1 (Extra)",
+  extra_omt2: "OMT2 (Extra)",
+  reserve: "Réservé",
+  reparer: "À réparer",
+};
