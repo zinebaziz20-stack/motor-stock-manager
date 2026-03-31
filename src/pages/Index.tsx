@@ -26,17 +26,22 @@ export default function Index() {
     const motor = parsedData.motors.find((m) => m.id === id);
     if (!motor) return;
 
+    // Track the change by cell reference
+    const XLSX = await import("xlsx");
+    const cellRef = XLSX.utils.encode_cell({ r: motor.rawRow, c: motor.rawCol });
+    cellChanges.set(cellRef, newQty);
+
     updateExcelCell(parsedData.workbook, motor.rawRow, motor.rawCol, newQty);
 
     const updatedMotors = parsedData.motors.map((m) =>
       m.id === id ? { ...m, quantity: newQty } : m
     );
     setParsedData({ ...parsedData, motors: updatedMotors });
-  }, [parsedData]);
+  }, [parsedData, cellChanges]);
 
   const handleExport = useCallback(() => {
     if (!parsedData) return;
-    const buffer = exportWorkbook(parsedData.workbook);
+    const buffer = exportWorkbook(parsedData.originalData, cellChanges);
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -44,7 +49,7 @@ export default function Index() {
     a.download = fileName || "Stock_Moteur.xlsx";
     a.click();
     URL.revokeObjectURL(url);
-  }, [parsedData, fileName]);
+  }, [parsedData, fileName, cellChanges]);
 
   if (!role) {
     return <RoleSelector role={role} onSelect={setRole} />;
