@@ -1,15 +1,20 @@
 import { useState, useCallback, useEffect } from "react";
-import { RoleSelector } from "@/components/RoleSelector";
 import { FileUploader } from "@/components/FileUploader";
 import { FileHistory } from "@/components/FileHistory";
 import { StockTable } from "@/components/StockTable";
+import { UserManagement } from "@/components/UserManagement";
 import { parseStockExcel, updateExcelCell, exportWorkbook, encodeCellRef, type ParsedStock } from "@/lib/excelParser";
-import { uploadStockFile, uploadUpdatedFile, getFileHistory, downloadStockFile, getLatestFile, type StockFileRecord } from "@/lib/stockStorage";
-import { LogOut, Zap, Loader2 } from "lucide-react";
+import { uploadStockFile, uploadUpdatedFile, getFileHistory, downloadStockFile, type StockFileRecord } from "@/lib/stockStorage";
+import { useAuth } from "@/hooks/useAuth";
+import { LogOut, Zap, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
-export default function Index() {
-  const [role, setRole] = useState<"admin" | "user" | null>(null);
+interface IndexProps {
+  role: "admin" | "user";
+}
+
+export default function Index({ role }: IndexProps) {
+  const { signOut, user } = useAuth();
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedStock | null>(null);
   const [cellChanges] = useState<Map<string, string>>(new Map());
@@ -17,12 +22,11 @@ export default function Index() {
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showUserMgmt, setShowUserMgmt] = useState(false);
 
-  // Load file history and latest file on role selection
   useEffect(() => {
-    if (!role) return;
     loadLatestFile();
-  }, [role]);
+  }, []);
 
   const loadLatestFile = async () => {
     setLoading(true);
@@ -52,7 +56,6 @@ export default function Index() {
       setFileName(name);
       cellChanges.clear();
 
-      // Admin: upload to cloud
       if (role === "admin") {
         const file = new File([data], name, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
         const record = await uploadStockFile(file);
@@ -105,8 +108,6 @@ export default function Index() {
     if (!parsedData) return;
     try {
       const buffer = await exportWorkbook(parsedData.originalData, cellChanges);
-
-      // Download locally
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -115,16 +116,12 @@ export default function Index() {
       a.click();
       URL.revokeObjectURL(url);
 
-      // Also upload updated version to cloud if there are changes
       if (cellChanges.size > 0) {
         const record = await uploadUpdatedFile(fileName || "Stock_Moteur.xlsx", buffer);
         setCurrentFilePath(record.file_path);
-
-        // Re-parse so originalData reflects the new state
         const result = parseStockExcel(buffer);
         setParsedData(result);
         cellChanges.clear();
-
         const historyData = await getFileHistory();
         setHistory(historyData);
         toast.success("Fichier exporté et mis à jour dans le cloud");
@@ -137,13 +134,8 @@ export default function Index() {
     }
   }, [parsedData, fileName, cellChanges]);
 
-  if (!role) {
-    return <RoleSelector role={role} onSelect={setRole} />;
-  }
-
   return (
     <div className="min-h-screen">
-      {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -152,13 +144,22 @@ export default function Index() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-foreground tracking-tight">Stock Moteurs</h1>
-              <p className="text-xs text-muted-foreground capitalize">
-                Mode {role === "admin" ? "Administrateur" : "Consultation"}
+              <p className="text-xs text-muted-foreground">
+                {role === "admin" ? "Administrateur" : "Consultation"} — {user?.email}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             {role === "admin" && parsedData && <FileUploader onFileLoad={handleFileLoad} fileName={fileName} />}
+            {role === "admin" && (
+              <button
+                onClick={() => setShowUserMgmt(true)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span className="hidden md:inline">Utilisateurs</span>
+              </button>
+            )}
             <button
               onClick={() => setShowHistory(!showHistory)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
@@ -168,7 +169,7 @@ export default function Index() {
               Historique
             </button>
             <button
-              onClick={() => { setRole(null); setParsedData(null); setFileName(null); setCurrentFilePath(null); cellChanges.clear(); }}
+              onClick={signOut}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             >
               <LogOut className="w-4 h-4" />
@@ -177,7 +178,6 @@ export default function Index() {
         </div>
       </header>
 
-      {/* Content */}
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
         {loading && (
           <div className="flex items-center justify-center py-20">
@@ -214,6 +214,8 @@ export default function Index() {
           />
         )}
       </main>
+
+      <UserManagement open={showUserMgmt} onClose={() => setShowUserMgmt(false)} />
     </div>
   );
 }
