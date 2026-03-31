@@ -14,6 +14,7 @@ export interface MotorEntry {
 export interface ParsedStock {
   motors: MotorEntry[];
   workbook: XLSX.WorkBook;
+  originalData: ArrayBuffer;
 }
 
 function cleanCell(val: unknown): string {
