@@ -26,9 +26,7 @@ export default function Index() {
     const motor = parsedData.motors.find((m) => m.id === id);
     if (!motor) return;
 
-    // Track the change by cell reference
-    const XLSX = await import("xlsx");
-    const cellRef = XLSX.utils.encode_cell({ r: motor.rawRow, c: motor.rawCol });
+    const cellRef = encodeCellRef(motor.rawRow, motor.rawCol);
     cellChanges.set(cellRef, newQty);
 
     updateExcelCell(parsedData.workbook, motor.rawRow, motor.rawCol, newQty);
