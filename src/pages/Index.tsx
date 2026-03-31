@@ -2,13 +2,14 @@ import { useState, useCallback } from "react";
 import { RoleSelector } from "@/components/RoleSelector";
 import { FileUploader } from "@/components/FileUploader";
 import { StockTable } from "@/components/StockTable";
-import { parseStockExcel, updateExcelCell, exportWorkbook, type MotorEntry, type ParsedStock } from "@/lib/excelParser";
+import { parseStockExcel, updateExcelCell, exportWorkbook, encodeCellRef, type ParsedStock } from "@/lib/excelParser";
 import { LogOut, Zap } from "lucide-react";
 
 export default function Index() {
   const [role, setRole] = useState<"admin" | "user" | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedStock | null>(null);
+  const [cellChanges] = useState<Map<string, string>>(new Map());
 
   const handleFileLoad = useCallback((data: ArrayBuffer, name: string) => {
     try {
@@ -25,17 +26,20 @@ export default function Index() {
     const motor = parsedData.motors.find((m) => m.id === id);
     if (!motor) return;
 
+    const cellRef = encodeCellRef(motor.rawRow, motor.rawCol);
+    cellChanges.set(cellRef, newQty);
+
     updateExcelCell(parsedData.workbook, motor.rawRow, motor.rawCol, newQty);
 
     const updatedMotors = parsedData.motors.map((m) =>
       m.id === id ? { ...m, quantity: newQty } : m
     );
     setParsedData({ ...parsedData, motors: updatedMotors });
-  }, [parsedData]);
+  }, [parsedData, cellChanges]);
 
   const handleExport = useCallback(() => {
     if (!parsedData) return;
-    const buffer = exportWorkbook(parsedData.workbook);
+    const buffer = exportWorkbook(parsedData.originalData, cellChanges);
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -43,7 +47,7 @@ export default function Index() {
     a.download = fileName || "Stock_Moteur.xlsx";
     a.click();
     URL.revokeObjectURL(url);
-  }, [parsedData, fileName]);
+  }, [parsedData, fileName, cellChanges]);
 
   if (!role) {
     return <RoleSelector role={role} onSelect={setRole} />;

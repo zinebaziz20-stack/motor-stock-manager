@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { MotorEntry, extractKw } from "@/lib/excelParser";
-import { Search, Filter, Download, Pencil, Check, X } from "lucide-react";
+import { Download, Pencil, Check, X, Gauge, Layers, Zap } from "lucide-react";
 
 interface StockTableProps {
   motors: MotorEntry[];
@@ -11,10 +11,10 @@ interface StockTableProps {
 
 const SPEED_OPTIONS = [
   { value: 0, label: "Toutes" },
-  { value: 3000, label: "3000 tr/min" },
-  { value: 1500, label: "1500 tr/min" },
-  { value: 1000, label: "1000 tr/min" },
-  { value: 750, label: "750 tr/min" },
+  { value: 3000, label: "3000" },
+  { value: 1500, label: "1500" },
+  { value: 1000, label: "1000" },
+  { value: 750, label: "750" },
 ];
 
 const TYPE_OPTIONS = [
@@ -34,21 +34,23 @@ function getSpeedClass(speed: number) {
 }
 
 export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTableProps) {
-  const [searchKw, setSearchKw] = useState("");
   const [speedFilter, setSpeedFilter] = useState(0);
   const [typeFilter, setTypeFilter] = useState("");
+  const [kwFilter, setKwFilter] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+
+  // Extract unique puissance values sorted by kW
+  const puissanceOptions = useMemo(() => {
+    const unique = [...new Set(motors.map((m) => m.puissance))];
+    unique.sort((a, b) => extractKw(a) - extractKw(b));
+    return unique;
+  }, [motors]);
 
   const filtered = motors.filter((m) => {
     if (speedFilter && m.speed !== speedFilter) return false;
     if (typeFilter && m.type !== typeFilter) return false;
-    if (searchKw) {
-      const kw = extractKw(m.puissance);
-      const searchNum = parseFloat(searchKw.replace(",", "."));
-      if (!isNaN(searchNum) && kw !== searchNum) return false;
-      if (isNaN(searchNum) && !m.puissance.toLowerCase().includes(searchKw.toLowerCase())) return false;
-    }
+    if (kwFilter && m.puissance !== kwFilter) return false;
     return true;
   });
 
@@ -69,67 +71,88 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
 
   return (
     <div className="space-y-6">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Chercher par kW (ex: 5.5)"
-            value={searchKw}
-            onChange={(e) => setSearchKw(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-input bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
-          />
+      {/* 3 Filter Boxes */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Vitesse */}
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Gauge className="w-4 h-4 text-primary" />
+            Vitesse (tr/min)
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {SPEED_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSpeedFilter(opt.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  speedFilter === opt.value
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted text-muted-foreground hover:bg-secondary hover:text-secondary-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <Filter className="w-4 h-4 text-muted-foreground" />
-          {SPEED_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setSpeedFilter(opt.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                speedFilter === opt.value
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        {/* Type */}
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Layers className="w-4 h-4 text-accent" />
+            Type de moteur
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {TYPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setTypeFilter(opt.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  typeFilter === opt.value
+                    ? "bg-accent text-accent-foreground shadow-sm"
+                    : "bg-muted text-muted-foreground hover:bg-secondary hover:text-secondary-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {TYPE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setTypeFilter(opt.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                typeFilter === opt.value
-                  ? "bg-accent text-accent-foreground"
-                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        {/* Puissance */}
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Zap className="w-4 h-4 text-success" />
+            Puissance (kW)
+          </div>
+          <select
+            value={kwFilter}
+            onChange={(e) => setKwFilter(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">Toutes les puissances</option>
+            {puissanceOptions.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
         </div>
+      </div>
 
+      {/* Results count + export */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {filtered.length} résultat{filtered.length !== 1 ? "s" : ""}
+        </p>
         {role === "admin" && (
           <button
             onClick={onExport}
-            className="ml-auto flex items-center gap-2 px-4 py-2.5 rounded-xl bg-success text-success-foreground font-medium text-sm hover:opacity-90 transition-opacity"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-success text-success-foreground font-medium text-sm hover:opacity-90 transition-opacity"
           >
             <Download className="w-4 h-4" />
             Exporter Excel
           </button>
         )}
       </div>
-
-      {/* Results count */}
-      <p className="text-sm text-muted-foreground">
-        {filtered.length} résultat{filtered.length !== 1 ? "s" : ""}
-      </p>
 
       {/* Table */}
       <div className="rounded-2xl border border-border overflow-hidden bg-card">

@@ -14,6 +14,7 @@ export interface MotorEntry {
 export interface ParsedStock {
   motors: MotorEntry[];
   workbook: XLSX.WorkBook;
+  originalData: ArrayBuffer;
 }
 
 function cleanCell(val: unknown): string {
@@ -22,7 +23,7 @@ function cleanCell(val: unknown): string {
 }
 
 export function parseStockExcel(data: ArrayBuffer): ParsedStock {
-  const workbook = XLSX.read(data, { type: "array" });
+  const workbook = XLSX.read(data, { type: "array", cellStyles: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
@@ -119,7 +120,7 @@ export function parseStockExcel(data: ArrayBuffer): ParsedStock {
     }
   }
 
-  return { motors, workbook };
+  return { motors, workbook, originalData: data };
 }
 
 function findRowContaining(raw: unknown[][], text: string): number {
@@ -149,12 +150,38 @@ export function updateExcelCell(workbook: XLSX.WorkBook, row: number, col: numbe
   }
 }
 
-export function exportWorkbook(workbook: XLSX.WorkBook): ArrayBuffer {
-  return XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+export function exportWorkbook(originalData: ArrayBuffer, changes: Map<string, string>): ArrayBuffer {
+  // Re-read original file to preserve all formatting, colors, merges, etc.
+  const wb = XLSX.read(originalData, { type: "array", cellStyles: true });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  
+  // Apply only the changed cells
+  for (const [cellRef, value] of changes) {
+    const num = Number(value);
+    if (!sheet[cellRef]) {
+      sheet[cellRef] = !isNaN(num) && value !== "" 
+        ? { t: "n", v: num } 
+        : { t: "s", v: value };
+    } else {
+      if (!isNaN(num) && value !== "") {
+        sheet[cellRef].t = "n";
+        sheet[cellRef].v = num;
+      } else {
+        sheet[cellRef].t = "s";
+        sheet[cellRef].v = value;
+      }
+    }
+  }
+  
+  return XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
 }
 
 export function extractKw(puissance: string): number {
   const match = puissance.match(/([\d.,]+)\s*[kK][wW]/i);
   if (match) return parseFloat(match[1].replace(",", "."));
   return 0;
+}
+
+export function encodeCellRef(row: number, col: number): string {
+  return XLSX.utils.encode_cell({ r: row, c: col });
 }
