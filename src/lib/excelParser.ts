@@ -181,3 +181,7 @@ export function extractKw(puissance: string): number {
   if (match) return parseFloat(match[1].replace(",", "."));
   return 0;
 }
+
+export function encodeCellRef(row: number, col: number): string {
+  return XLSX.utils.encode_cell({ r: row, c: col });
+}
