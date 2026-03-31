@@ -120,7 +120,7 @@ export function parseStockExcel(data: ArrayBuffer): ParsedStock {
     }
   }
 
-  return { motors, workbook };
+  return { motors, workbook, originalData: data };
 }
 
 function findRowContaining(raw: unknown[][], text: string): number {
