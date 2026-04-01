@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { MotorEntry, extractKw, CATEGORY_LABELS, type MotorCategory } from "@/lib/excelParser";
 import { Download, Pencil, Check, X, Gauge, Layers, Zap, Search, RotateCcw } from "lucide-react";
 
@@ -56,12 +56,10 @@ function getCategoryColor(cat: MotorCategory) {
 }
 
 export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTableProps) {
-  // États de saisie
   const [speedInput, setSpeedInput] = useState(0);
   const [categoryInput, setCategoryInput] = useState<string>("");
   const [kwInput, setKwInput] = useState("");
 
-  // États appliqués à la recherche
   const [speedFilter, setSpeedFilter] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [kwFilter, setKwFilter] = useState("");
@@ -69,6 +67,19 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
   const [hasSearched, setHasSearched] = useState(role === "admin");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+
+  useEffect(() => {
+    if (role === "admin") {
+      setHasSearched(true);
+    } else {
+      setHasSearched(false);
+      setSpeedFilter(0);
+      setCategoryFilter("");
+      setKwFilter("");
+      setEditingId(null);
+      setEditValue("");
+    }
+  }, [role]);
 
   const categories = useMemo(() => {
     return [...new Set(motors.map((m) => m.category))];
@@ -103,10 +114,7 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
     return unique;
   }, [motors, categoryInput, speedInput]);
 
-  const canSearch =
-    role === "admin"
-      ? true
-      : Boolean(categoryInput && speedInput && kwInput);
+  const canSearch = role === "admin" ? true : Boolean(categoryInput && speedInput && kwInput);
 
   const filtered = useMemo(() => {
     if (role === "user") {
@@ -162,21 +170,19 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
     setEditValue("");
   };
 
-  // Affichage du tableau basé sur les filtres appliqués
   const showingReserve = categoryFilter === "reserve";
   const showingReparer = categoryFilter === "reparer";
   const showingBride = categoryFilter === "bride_dm" || categoryFilter === "bride_omt4";
 
   return (
     <div className="space-y-6">
-      {/* 3 Filter Boxes */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Catégorie */}
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Layers className="w-4 h-4 text-accent" />
             Catégorie
           </div>
+
           <div className="flex flex-wrap gap-1.5">
             <button
               onClick={() => {
@@ -211,12 +217,12 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
           </div>
         </div>
 
-        {/* Vitesse */}
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Gauge className="w-4 h-4 text-primary" />
             Vitesse (tr/min)
           </div>
+
           <div className="flex flex-wrap gap-1.5">
             {SPEED_OPTIONS.map((opt) => (
               <button
@@ -237,7 +243,6 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
           </div>
         </div>
 
-        {/* Puissance */}
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Zap className="w-4 h-4 text-success" />
@@ -267,7 +272,6 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
         </div>
       </div>
 
-      {/* Boutons de recherche */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
         <button
           onClick={handleReset}
@@ -287,7 +291,6 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
         </button>
       </div>
 
-      {/* Message guide user */}
       {role === "user" && !hasSearched && (
         <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
           Veuillez sélectionner la catégorie, la vitesse et la puissance, puis cliquer sur
@@ -301,7 +304,6 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
         </div>
       )}
 
-      {/* Results count + export */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {filtered.length} résultat{filtered.length !== 1 ? "s" : ""}
@@ -318,7 +320,6 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
         )}
       </div>
 
-      {/* Table */}
       <div className="rounded-2xl border border-border overflow-hidden bg-card">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -411,13 +412,9 @@ export function StockTable({ motors, role, onUpdateQuantity, onExport }: StockTa
                       </td>
                     )}
 
-                    {isReparer && (
-                      <td className="px-4 py-3 text-sm text-foreground">{m.description}</td>
-                    )}
+                    {isReparer && <td className="px-4 py-3 text-sm text-foreground">{m.description}</td>}
 
-                    {isReserve && (
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{m.commercial}</td>
-                    )}
+                    {isReserve && <td className="px-4 py-3 text-sm text-muted-foreground">{m.commercial}</td>}
 
                     {!isReparer && (
                       <td className="px-4 py-3 text-sm text-muted-foreground">
