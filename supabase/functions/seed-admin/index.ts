@@ -13,14 +13,20 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  const adminEmail = "admin.admin@admin.com";
-  const adminPassword = "admin123";
+  const adminEmail = "AZIZ@admin.com";
+  const adminPassword = "MOH2503";
 
   // Check if admin already exists
   const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
   const existing = existingUsers?.users?.find((u) => u.email === adminEmail);
 
   if (existing) {
+    // Update password
+    await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+      password: adminPassword,
+      email_confirm: true,
+    });
+
     // Ensure role exists
     const { data: roleExists } = await supabaseAdmin
       .from("user_roles")
@@ -33,7 +39,7 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from("user_roles").insert({ user_id: existing.id, role: "admin" });
     }
 
-    return new Response(JSON.stringify({ message: "Admin already exists", userId: existing.id }), {
+    return new Response(JSON.stringify({ message: "Admin updated with password", userId: existing.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
